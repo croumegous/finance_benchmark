@@ -1,14 +1,12 @@
 # https://www.pythonforfinance.net/2017/01/21/investment-portfolio-optimisation-with-python/
 
 import argparse
-import functools
 import os
 import sys
-import time
 import webbrowser
 from datetime import timedelta
 from math import sqrt
-from finance_benchmark import config
+
 import numpy as np
 import pandas as pd
 import pandas_datareader.data as web
@@ -18,30 +16,29 @@ from plotly.offline import plot
 from plotly.subplots import make_subplots
 from tqdm import tqdm
 
-STARTDATE = config.startdate
-NUM_PORTFOLIO = config.num_portfolio
-POLITE_NAME = config.polite_name
-ASSETS = config.assets
-VALUE_FILTER = 100 / len(ASSETS) * (35 / 10000)
+from finance_benchmark import config
 
 
-def get_asset_data(assets_ticker = ASSETS, startdate = STARTDATE):
+def get_asset_data(assets_ticker, startdate):
     """Retrieve assets data from yahoo finance
+
     Args:
         assets_ticker ([type]): [description]
         startdate ([type]): [description]
     """
     first = True
-    for ticker in tqdm(assets_ticker):
+    for ticker in tqdm(assets_ticker):  # progress bar when downloading data
         ticker = ticker.strip()
+        # cache data to avoid downloading them again when filtering
         session = requests_cache.CachedSession(
             cache_name="cache", backend="sqlite", expire_after=timedelta(days=3)
         )
         try:
+            # Get daily closing price
             data = web.DataReader(
                 ticker, data_source="yahoo", start=startdate, session=session
             )["Close"]
-        except Exception:            
+        except Exception:
             print("Error fetching : " + ticker)
             continue
 
@@ -273,9 +270,9 @@ def evol_chart(weight, log=False):
     df_portfolio["Portfolio"] = df_portfolio.sum(axis=1)
 
     df["Portfolio"] = df_portfolio["Portfolio"]
-
+    polite_name = config.polite_name
     for col in df.columns:
-        polite_ticker = POLITE_NAME[col] if col in POLITE_NAME else col
+        polite_ticker = polite_name[col] if col in polite_name else col
         data_col = df[col].dropna()
 
         fig.add_trace(
@@ -291,7 +288,7 @@ def evol_chart(weight, log=False):
                 x=0.11,
                 xanchor="left",
                 y=1.1,
-                yanchor="top",                
+                yanchor="top",
                 # Add button on graph to change from log to linear
                 buttons=list(
                     [
@@ -361,7 +358,7 @@ def resample_portfolio_change(weight, period):
 
 
 def period_return_chart(weight):
-    """Chart of performance per month and performance per year 
+    """Chart of performance per month and performance per year
     Might be a little buggy with some bad data need improvement
     Args:
         weight ([type]): [description]
@@ -460,9 +457,7 @@ def create_final_review(
         sharpe_by_asset_fig ([type]): [description]
         period_return_fig ([type]): [description]
     """
-    import pathlib
-    print(pathlib.Path().absolute())
-    fichier_html_graphs = open("./result_html/DASHBOARD.html", "w+")
+    fichier_html_graphs = open("../result_html/DASHBOARD.html", "w+")
     fichier_html_graphs.write("<html><head></head><body>" + "\n")
 
     evol_price_fig.update_layout(
@@ -482,16 +477,18 @@ def create_final_review(
         # paper_bgcolor="LightSteelBlue",
     )
 
-    plot(evol_price_fig, filename="result_html/evol_asset_price.html", auto_open=False)
-    plot(sharpe_fig, filename="result_html/sharpe_fig.html", auto_open=False)
+    plot(
+        evol_price_fig, filename="../result_html/evol_asset_price.html", auto_open=False
+    )
+    plot(sharpe_fig, filename="../result_html/sharpe_fig.html", auto_open=False)
     plot(
         period_return_fig,
-        filename="result_html/period_return_fig.html",
+        filename="../result_html/period_return_fig.html",
         auto_open=False,
     )
     plot(
         sharpe_by_asset_fig,
-        filename="result_html/sharpe_by_asset_fig.html",
+        filename="../result_html/sharpe_by_asset_fig.html",
         auto_open=False,
     )
 
@@ -532,21 +529,21 @@ def create_final_review(
     fichier_html_graphs.write(" </div>" + "\n")
 
     fichier_html_graphs.write("</body></html>")
-    webbrowser.open_new_tab("./result_html/DASHBOARD.html")
+    webbrowser.open_new_tab("../result_html/DASHBOARD.html")
 
 
-if __name__ == "__main__":
-    # os.chdir(os.path.dirname(sys.argv[0]))
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-f", dest="filter", type=int, help="filtered mode")
-    parser.add_argument(
-        "--log", dest="log", action="store_true", help="Use logarithmic chart"
-    )
-    args = parser.parse_args()
+def get_data_and_create_graph(assets, startdate, num_portfolio, args):
+    """Main function which will retrieve assets data and create graphs
+    based on it
+    Args:
+        assets (list): Assets to analyze
+        startdate (string): Date where the analyze should begin
+        num_portfolio (int): number of different portfolio allocation to create
+        args : optionnal command arguments
+    """
+    get_asset_data(assets, startdate)
 
-    get_asset_data(ASSETS, STARTDATE)
-
-    sharpe_fig, max_sharpe_port = optimize(NUM_PORTFOLIO)
+    sharpe_fig, max_sharpe_port = optimize(num_portfolio)
     sharpe_by_asset_fig, ticker_to_eliminate = sharpe_each_asset_chart()
     evol_price_fig = evol_chart(max_sharpe_port.tolist()[3:], log=args.log)
 
@@ -555,10 +552,29 @@ if __name__ == "__main__":
     create_final_review(
         evol_price_fig, sharpe_fig, sharpe_by_asset_fig, period_return_fig
     )
+    return ticker_to_eliminate
+
+
+def main(args):
+    # Check config variable are set
+    for variable in ["startdate", "num_portfolio", "assets"]:
+        if not hasattr(config, variable):
+            print(f'Missing variable "{variable}" in config file')
+            sys.exit(1)
+
+    startdate = config.startdate
+    num_portfolio = config.num_portfolio
+    assets = config.assets
+    # assets with percentage less than this value will be deleted in optimized portfolio
+    value_filter = 100 / len(assets) * (35 / 10000)
+
+    ticker_to_eliminate = get_data_and_create_graph(
+        assets, startdate, num_portfolio, args
+    )
 
     if args.filter:
         for i in range(args.filter):
-            max_sharpe_port = max_sharpe_port[max_sharpe_port.values > VALUE_FILTER]
+            max_sharpe_port = max_sharpe_port[max_sharpe_port.values > value_filter]
             print(max_sharpe_port)
             print("############################")
             print("FILTRATION...")
@@ -566,21 +582,20 @@ if __name__ == "__main__":
 
             new_assets = max_sharpe_port.index.tolist()[3:]
             new_assets = [x for x in new_assets if x not in ticker_to_eliminate]
-            VALUE_FILTER = 100 / len(new_assets) * (40 / 10000)
-            try:
-                if previous_assets == new_assets:
-                    break
-            except Exception:
-                pass
+            if previous_assets == new_assets: # if no filtration is made this is the "final" result
+                break
             previous_assets = new_assets
 
-            get_asset_data(new_assets, STARTDATE)
-            sharpe_fig, max_sharpe_port = optimize(NUM_PORTFOLIO)
-            sharpe_by_asset_fig, ticker_to_eliminate = sharpe_each_asset_chart()
-            evol_price_fig = evol_chart(max_sharpe_port.tolist()[3:], log=args.log)
-
-            period_return_fig = period_return_chart(max_sharpe_port.tolist()[3:])
-
-            create_final_review(
-                evol_price_fig, sharpe_fig, sharpe_by_asset_fig, period_return_fig
+            ticker_to_eliminate = get_data_and_create_graph(
+                assets, startdate, num_portfolio, args
             )
+
+
+if __name__ == "__main__":
+    os.chdir(os.path.dirname(sys.argv[0]))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-f", dest="filter", type=int, help="filtered mode")
+    parser.add_argument(
+        "--log", dest="log", action="store_true", help="Use logarithmic chart"
+    )
+    main(parser.parse_args())

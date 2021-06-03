@@ -1,8 +1,8 @@
-polite_name = {    
+polite_name = {
     "^IXIC": "NASDAQ",
-    "^GSPC": "S&P500",    
+    "^GSPC": "S&P500",
     "^FCHI": "CAC40",
-    "OBLI.PA": "Obligation EU",    
+    "OBLI.PA": "Obligation EU",
 }
 
 assets = [

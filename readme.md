@@ -2,7 +2,7 @@
 I made this project a year ago, so the source code is quite bad.
 I tried to clean it recently to make it public but it is not perfect yet.
 
-:warning: This project is not totally reliable and the data shown can be buggy/biased, do your own research and don't take conclusion blindly on data shown in this poject.
+:warning: This project is not totally reliable and the data shown can be buggy/biased, do your own research and don't take conclusion blindly on data shown in this project.
 
 
 # Presentation
@@ -50,7 +50,12 @@ poetry install
 ```
 at the root folder to install all required dependencies.
 
+Run
+```bash
+poetry run python finance_benchmark/src/portfolio_optimization.py
+```
 
+You can also use -f <int> to filter assets wich means that the algorithm will be ran multiple time and each time it will remove the less performing assets. This is usefull when you compare a lot of assets.
 
 
 ## Configuration 
