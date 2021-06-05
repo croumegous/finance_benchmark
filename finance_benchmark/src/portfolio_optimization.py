@@ -9,7 +9,6 @@ import pandas as pd
 import pandas_datareader.data as web
 import requests_cache
 from plotly import graph_objs as go
-from plotly.offline import plot
 from plotly.subplots import make_subplots
 from tqdm import tqdm
 
@@ -96,21 +95,19 @@ def optimize_sharpe_ratio(num_portfolios):
 
         # calculate portfolio return and volatility
         portfolio_return = np.sum(mean_daily_returns * weights) * 252
-        # print(np.dot(cov_matrix, weights))
         portfolio_std_dev = np.sqrt(
             np.dot(weights.T, np.dot(cov_matrix, weights))
         ) * np.sqrt(252)
 
-        # store results in results array
+        # store returns and standard deviation in results array
+        # store Sharpe Ratio (return / volatility) - risk free rate element excluded for simplicity
         results[0][i] = portfolio_return
         results[1][i] = portfolio_std_dev
-        # store Sharpe Ratio (return / volatility) - risk free rate element excluded for simplicity
         results[2][i] = results[0][i] / results[1][i]
         # iterate through the weight vector and add data to results array
         weights = weights.tolist()
-        for j in range(len(weights)):
-            results[j + 3][i] = weights[j]
-        weights = np.array(weights)
+        for j, weight in enumerate(weights):
+            results[j + 3][i] = weight
     # convert results array to Pandas DataFrame
     my_columns = ["returns", "stdev", "sharpe"]
     my_columns.extend(data.columns)
@@ -273,39 +270,6 @@ def evol_chart(weight):
             )
         )
 
-    # Add button on graph to change from log to linear
-    dropdownScaleViewer = list(
-        [
-            dict(
-                active=1,
-                x=0,
-                xanchor="left",
-                y=1,
-                yanchor="top",
-                buttons=list(
-                    [
-                        dict(
-                            label="Log Scale",
-                            method="update",
-                            args=[
-                                {"visible": [True, True]},
-                                {"yaxis": {"type": "log"}},
-                            ],
-                        ),
-                        dict(
-                            label="Linear Scale",
-                            method="update",
-                            args=[
-                                {"visible": [True, False]},
-                                {"yaxis": {"type": "linear"}},
-                            ],
-                        ),
-                    ]
-                ),
-            )
-        ]
-    )
-    fig.layout = dict(updatemenus=dropdownScaleViewer)
     fig.layout.yaxis.tickformat = ",.0%"
 
     fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
@@ -465,46 +429,46 @@ def create_final_html_file():
     """Assembles all graphs together in a single HTMl file named DASHBOARD.html
     and open a page in browser
     """
-    fichier_html_graphs = open("../result_html/DASHBOARD.html", "w+")
-    fichier_html_graphs.write("<html><head></head><body>" + "\n")
+    with open("../result_html/DASHBOARD.html", "w+") as html_graph_file:
+        html_graph_file.write("<html><head></head><body>" + "\n")
 
-    fichier_html_graphs.write(
-        ' <div style= "position: relative;  top: 0px;  left: 0;  width: 68%;  height: 59%;">'
-        + "\n"
-    )
-    fichier_html_graphs.write(
-        '  <object data="'
-        + "evol_asset_price.html"
-        + '" width="100%" height="100%"></object></div>'
-        + "\n"
-    )
-    fichier_html_graphs.write(' <div style= "position: relative; ">' + "\n")
-    fichier_html_graphs.write(
-        ' <object data="'
-        + "period_return_fig.html"
-        + '" width="62%" height="42%"></object>'
-        + "\n"
-    )
-    fichier_html_graphs.write(" </div>" + "\n")
-    fichier_html_graphs.write(
-        ' <div style= "position: fixed;  top: 0px;  right: 0;  width: 33%;  height: 100%;">'
-        + "\n"
-    )
-    fichier_html_graphs.write(
-        '  <object data="'
-        + "sharpe_fig.html"
-        + '" width="100%" height="50%"></object>'
-        + "\n"
-    )
-    fichier_html_graphs.write(
-        '  <object data="'
-        + "sharpe_by_asset_fig.html"
-        + '" width="100%" height="50%"></object>'
-        + "\n"
-    )
-    fichier_html_graphs.write(" </div>" + "\n")
+        html_graph_file.write(
+            ' <div style= "position: relative;  top: 0px;  left: 0;  width: 68%;  height: 59%;">'
+            + "\n"
+        )
+        html_graph_file.write(
+            '  <object data="'
+            + "evol_asset_price.html"
+            + '" width="100%" height="100%"></object></div>'
+            + "\n"
+        )
+        html_graph_file.write(' <div style= "position: relative; ">' + "\n")
+        html_graph_file.write(
+            ' <object data="'
+            + "period_return_fig.html"
+            + '" width="62%" height="42%"></object>'
+            + "\n"
+        )
+        html_graph_file.write(" </div>" + "\n")
+        html_graph_file.write(
+            ' <div style= "position: fixed;  top: 0px;  right: 0;  width: 33%;  height: 100%;">'
+            + "\n"
+        )
+        html_graph_file.write(
+            '  <object data="'
+            + "sharpe_fig.html"
+            + '" width="100%" height="50%"></object>'
+            + "\n"
+        )
+        html_graph_file.write(
+            '  <object data="'
+            + "sharpe_by_asset_fig.html"
+            + '" width="100%" height="50%"></object>'
+            + "\n"
+        )
+        html_graph_file.write(" </div>" + "\n")
 
-    fichier_html_graphs.write("</body></html>")
+        html_graph_file.write("</body></html>")
     webbrowser.open_new_tab("../result_html/DASHBOARD.html")
 
 
@@ -544,7 +508,7 @@ def main(args):
         assets, startdate, num_portfolio
     )
 
-    for i in range(args.filter):
+    for _ in range(args.filter):
         max_sharpe_portfolio = max_sharpe_portfolio[
             max_sharpe_portfolio.values > value_filter
         ]

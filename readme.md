@@ -41,7 +41,7 @@ I used pandas and numpy to handle data analysis.
 
 
 # Usage
-install [python](https://www.python.org/downloads/) 3.8 or above and [poetry](https://python-poetry.org/docs/) (pakage manager) on your computer
+install [python](https://www.python.org/downloads/) 3.8 or above and [poetry](https://python-poetry.org/docs/) (pakage manager) on your computer.
 
 
 Once done use 
@@ -55,7 +55,7 @@ Run
 poetry run python finance_benchmark/src/portfolio_optimization.py
 ```
 
-You can also use -f <int> to filter assets wich means that the algorithm will be ran multiple time and each time it will remove the less performing assets. This is usefull when you compare a lot of assets.
+You can also use `-f <int>` as command argument, to filter assets which means that the algorithm will be ran multiple time and each time it will remove the less performing assets. This is usefull when you compare a lot of assets.
 
 
 ## Configuration 
