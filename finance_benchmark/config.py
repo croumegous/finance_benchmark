@@ -14,5 +14,5 @@ assets = [
     "OBLI.PA",
 ]
 
-startdate = "01/01/2021"
-num_portfolio = 150000
+startdate = "01/01/2018"
+num_portfolio = 100000

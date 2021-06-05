@@ -1,11 +1,8 @@
-# https://www.pythonforfinance.net/2017/01/21/investment-portfolio-optimisation-with-python/
-
 import argparse
 import os
 import sys
 import webbrowser
 from datetime import timedelta
-from math import sqrt
 
 import numpy as np
 import pandas as pd
@@ -23,15 +20,15 @@ def get_asset_data(assets_ticker, startdate):
     """Retrieve assets data from yahoo finance
 
     Args:
-        assets_ticker ([type]): [description]
-        startdate ([type]): [description]
+        assets_ticker ([str]): list of assets to download
+        startdate (str): start date
     """
-    first = True
+    df = pd.DataFrame()
     for ticker in tqdm(assets_ticker):  # progress bar when downloading data
         ticker = ticker.strip()
         # cache data to avoid downloading them again when filtering
         session = requests_cache.CachedSession(
-            cache_name="cache", backend="sqlite", expire_after=timedelta(days=3)
+            cache_name="../cache", backend="sqlite", expire_after=timedelta(days=1)
         )
         try:
             # Get daily closing price
@@ -42,48 +39,44 @@ def get_asset_data(assets_ticker, startdate):
             print("Error fetching : " + ticker)
             continue
 
-        if first:
-            df = data
-            df = pd.DataFrame({"Date": df.index, ticker: df.values})
-            df.drop_duplicates(subset="Date", inplace=True)
-            df.set_index("Date", inplace=True)
-            first = False
-        else:
-            data = pd.DataFrame({"Date": data.index, ticker: data.values})
-            data.drop_duplicates(subset="Date", inplace=True)
-            data.set_index("Date", inplace=True)
-            df = df.join(data, how="outer")
+        data = pd.DataFrame({"Date": data.index, ticker: data.values})
+        data.drop_duplicates(
+            subset="Date", inplace=True
+        )  # remove duplicate statement for the same day
+        data.set_index("Date", inplace=True)
+        df = df.join(data, how="outer")  # add asset data to main dataframe
 
     df.sort_index(inplace=True)
-    df.dropna(axis=1, how="all", inplace=True)
+    df.dropna(axis=1, how="all", inplace=True)  # remove null values
 
-    # remove assets with less than 60 days of data
+    # remove assets with less than 60 days of data history
     for col in df.columns:
         if (len(df) - df[col].isna().sum()) < 60:
             df.drop(col, axis=1, inplace=True)
 
     df.drop_duplicates(inplace=True)
 
-    df.to_csv("new_assets.csv")
+    df.to_csv("../assets.csv")
 
 
 # For later improvement it may be better to use sortino ratio instead of sharpe ratio
 # https://www.investopedia.com/ask/answers/010815/what-difference-between-sharpe-ratio-and-sortino-ratio.asp
-def optimize(num_portfolios):
+def optimize_sharpe_ratio(num_portfolios):
     """Optimize portfolio with sharpe ratio
 
+    Generate `num_portfolios` portfolio with different proportions for each given asset.
+    It will calculate sharpe ratio of each one of this portfolio to try to find the best performing one with volatily as low as possible.
+
     Args:
-        num_portfolios ([type]): [description]
+        num_portfolios (int): number of portfolio to generate
 
     Returns:
         [type]: [description]
     """
-    data = pd.read_csv("new_assets.csv")
+    data = pd.read_csv("../assets.csv")
     data.set_index("Date", inplace=True)
     if "Portfolio" in data.columns:
         data.drop("Portfolio", 1, inplace=True)
-    print(data.head())
-    print(data.tail())
 
     asset_size = len(data.columns)
     # convert daily asset prices into daily returns
@@ -92,13 +85,12 @@ def optimize(num_portfolios):
     mean_daily_returns = np.array(returns.mean())
     cov_matrix = np.array(returns.cov())
     # set up array to hold results
-    # We have increased the size of the array to hold the weight values for each asset
-    results = np.zeros((4 + asset_size - 1, num_portfolios))
+    # Increase the size of the array to hold the return, std deviation and sharpe ratio
+    results = np.zeros((asset_size + 3, num_portfolios))
     results = results.tolist()
     for i in range(num_portfolios):
         # select random weights for portfolio holdings
         weights = np.array(np.random.random(asset_size))
-        # print(weights)
         # rebalance weights to sum to 1
         weights /= np.sum(weights)
 
@@ -107,7 +99,7 @@ def optimize(num_portfolios):
         # print(np.dot(cov_matrix, weights))
         portfolio_std_dev = np.sqrt(
             np.dot(weights.T, np.dot(cov_matrix, weights))
-        ) * sqrt(252)
+        ) * np.sqrt(252)
 
         # store results in results array
         results[0][i] = portfolio_return
@@ -120,23 +112,22 @@ def optimize(num_portfolios):
             results[j + 3][i] = weights[j]
         weights = np.array(weights)
     # convert results array to Pandas DataFrame
-    # print(results)
-    my_columns = ["ret", "stdev", "sharpe"]
+    my_columns = ["returns", "stdev", "sharpe"]
     my_columns.extend(data.columns)
 
     results = np.array(results)
     results_frame = pd.DataFrame(results.T, columns=my_columns)
-    # locate position of portfolio with highest Sharpe Ratio
-    max_sharpe_port = results_frame.iloc[results_frame["sharpe"].idxmax()]
-    # locate positon of portfolio with minimum standard deviation
+    # Portfolio with highest Sharpe Ratio
+    max_sharpe_portfolio = results_frame.iloc[results_frame["sharpe"].idxmax()]
+    # Portfolio with minimum standard deviation
     min_vol_port = results_frame.iloc[results_frame["stdev"].idxmin()]
-    # create scatter plot coloured by Sharpe Ratio
 
+    # create scatter plot coloured by Sharpe Ratio
     fig = go.Figure(
         data=(
             go.Scattergl(
                 x=results_frame.stdev,
-                y=results_frame.ret,
+                y=results_frame.returns,
                 mode="markers",
                 marker=dict(
                     color=results_frame.sharpe,
@@ -148,8 +139,9 @@ def optimize(num_portfolios):
         )
     )
 
+    # Add asset proportion of portfolio with best sharpe ratio
     fig.add_annotation(
-        text=max_sharpe_port.to_string().replace("\n", "<br>"),
+        text=max_sharpe_portfolio.to_string().replace("\n", "<br>"),
         align="left",
         showarrow=False,
         xref="paper",
@@ -160,29 +152,28 @@ def optimize(num_portfolios):
         borderwidth=1,
     )
     fig.add_annotation(
-        x=max_sharpe_port[1], y=max_sharpe_port[0], text="Best sharpe ratio"
+        x=max_sharpe_portfolio[1], y=max_sharpe_portfolio[0], text="Best sharpe ratio"
     )
     fig.add_annotation(x=min_vol_port[1], y=min_vol_port[0], text="Lower volatility")
 
     fig.update_layout(xaxis_title="Volatility", yaxis_title="Returns")
+    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+    fig.write_html("../result_html/sharpe_fig.html", auto_open=False, full_html=False)
 
-    # plot(fig, 'u.html', auto_open=True)
+    print("####### Optimized portfolio #######")
+    print(max_sharpe_portfolio)
+    print("###################################")
 
-    # pd.options.display.max_colwidth = 100
-    print("RESULT =============================")
-    print(max_sharpe_port)
-    print("====================================")
-
-    return fig, max_sharpe_port
+    return max_sharpe_portfolio
 
 
 def sharpe_each_asset_chart():
     """Get the sharpe ratio of each asset
 
     Returns:
-        [type]: [description]
+        list: list of assets with less than 0.2 sharpe ratio.
     """
-    data = pd.read_csv("new_assets.csv")
+    data = pd.read_csv("../assets.csv")
     data.set_index("Date", inplace=True)
 
     # convert daily asset prices into daily returns
@@ -192,12 +183,11 @@ def sharpe_each_asset_chart():
     mean_return = returns.mean() * 252
     volatility = returns.std() * (252 ** 0.5)
 
-    print("ALL SHARPE : ")
+    print("Sharpe ratio for each asset: ")
     ticker_to_eliminate = [
         key for key, value in sharpe_ratio.to_dict().items() if value <= 0.2
     ]
-    print(sharpe_ratio.index.to_list())
-    print(sharpe_ratio.to_list())
+    print(dict(zip(sharpe_ratio.index.to_list(), sharpe_ratio.to_list())))
     fig = go.Figure(
         data=(
             go.Scattergl(
@@ -218,12 +208,12 @@ def sharpe_each_asset_chart():
     )
 
     fig.add_shape(
-        # Line Diagonal
+        # diagonal line
         type="line",
         x0=0,
         y0=0,
-        x1=1,
-        y1=1,
+        x1=10,
+        y1=10,
         line=dict(
             color="MediumPurple",
             width=2,
@@ -233,27 +223,29 @@ def sharpe_each_asset_chart():
     fig.update_layout(
         xaxis_title="Volatility",
         yaxis_title="Returns",
-        yaxis=dict(range=[0, 0.5]),
-        xaxis=dict(range=[0, 0.5]),
+        yaxis=dict(range=[0, 1]),
+        xaxis=dict(range=[0, 1]),
     )
 
-    return fig, ticker_to_eliminate
-    # plot(fig, 'u.html', auto_open=True)
+    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+    fig.write_html(
+        "../result_html/sharpe_by_asset_fig.html", auto_open=False, full_html=False
+    )
+
+    return ticker_to_eliminate
 
 
-def evol_chart(weight, log=False):
-    """[summary]
+def evol_chart(weight):
+    """Performance chart of each asset
+    also include optimized portfolio performance
 
     Args:
-        weight ([type]): [description]
-
-    Returns:
-        [type]: [description]
+        weight ([int]): weight of each asset in portfolio
     """
 
     fig = go.Figure()
 
-    df = pd.read_csv("new_assets.csv")
+    df = pd.read_csv("../assets.csv")
     df.set_index("Date", inplace=True)
 
     df = df.loc[~df.index.duplicated(keep="first")]
@@ -262,14 +254,14 @@ def evol_chart(weight, log=False):
     for col in df.columns:
         df[col] = df[col] / df[col].at[df[col].first_valid_index()] - 1
 
+    # Add optimized portfolio performance line in the graph
     df_portfolio = df.copy()
     df_portfolio.dropna(inplace=True)
     for i in range(len(df_portfolio.columns)):
         df_portfolio.iloc[:, [i]] = df_portfolio.iloc[:, [i]] * weight[i]
-
     df_portfolio["Portfolio"] = df_portfolio.sum(axis=1)
-
     df["Portfolio"] = df_portfolio["Portfolio"]
+
     polite_name = config.polite_name
     for col in df.columns:
         polite_ticker = polite_name[col] if col in polite_name else col
@@ -281,15 +273,15 @@ def evol_chart(weight, log=False):
             )
         )
 
+    # Add button on graph to change from log to linear
     dropdownScaleViewer = list(
         [
             dict(
                 active=1,
-                x=0.11,
+                x=0,
                 xanchor="left",
-                y=1.1,
+                y=1,
                 yanchor="top",
-                # Add button on graph to change from log to linear
                 buttons=list(
                     [
                         dict(
@@ -315,26 +307,28 @@ def evol_chart(weight, log=False):
     )
     fig.layout = dict(updatemenus=dropdownScaleViewer)
     fig.layout.yaxis.tickformat = ",.0%"
-    # if log:
-    #     fig.layout.yaxis.type = "log"
+
+    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+    fig.write_html(
+        "../result_html/evol_asset_price.html", auto_open=False, full_html=False
+    )
 
     df_final["Portfolio"] = df["Portfolio"]
-    df_final.to_csv("new_assets.csv")
-
-    return fig
+    df_final.to_csv("../assets.csv")
 
 
-def resample_portfolio_change(weight, period):
-    """[summary]
+def resample_portfolio_period(weight, period):
+    """Change portfolio period index by year or by month
+    Resample time-series data.
 
     Args:
-        weight ([type]): [description]
-        period ([type]): [description]
+        weight ([int]): weight of each asset in portfolio
+        period (str): 'Y': yearly and 'M': monthly
 
     Returns:
-        [type]: [description]
+        dataframe: resampled portfolio
     """
-    df = pd.read_csv("new_assets.csv")
+    df = pd.read_csv("../assets.csv")
 
     df.drop("Portfolio", axis=1, inplace=True)
     df.set_index("Date", inplace=True)
@@ -342,48 +336,61 @@ def resample_portfolio_change(weight, period):
     df.index = pd.to_datetime(df.index)
     df = df.fillna(method="ffill")
 
-    df_temp = df.copy()
+    resampled_df = df.copy()
 
-    df_temp = df_temp.loc[~df_temp.index.duplicated(keep="first")]
-    df_temp = df_temp.resample(period, convention="s").ffill()
+    resampled_df = resampled_df.loc[~resampled_df.index.duplicated(keep="first")]
+    resampled_df = resampled_df.resample(period, convention="s").ffill()
 
-    df_temp.dropna(inplace=True)
-    for i in range(len(df_temp.columns)):
-        df_temp.iloc[:, [i]] = df_temp.iloc[:, [i]] * weight[i]
+    resampled_df.dropna(inplace=True)
+    for i in range(len(resampled_df.columns)):
+        resampled_df.iloc[:, [i]] = resampled_df.iloc[:, [i]] * weight[i]
 
-    df_temp["Portfolio"] = df_temp.sum(axis=1)
-    df_temp["Portfolio"] = df_temp["Portfolio"].pct_change()
+    resampled_df["Portfolio"] = resampled_df.sum(axis=1)
+    resampled_df["Portfolio"] = resampled_df["Portfolio"].pct_change()
 
-    return df_temp
+    return resampled_df
+
+
+def average_period_performance(df, period):
+    """Calculate average performance for a certain period
+
+    Args:
+        df (dataframe): dataframe with portfoilio performance for each period
+        period (str): concerned period
+    """
+    try:
+        return_each_period = df["Portfolio"].tolist()[1:]
+        total_return = 1
+        for val in return_each_period:
+            total_return *= 1 + val
+        average_period_return = (total_return ** (1 / len(return_each_period))) - 1
+        print(
+            f"Average {period} performance : {'{0:.1%}'.format(average_period_return)}"
+        )
+    except Exception:
+        print(f"Error : average {period} return calculation")
 
 
 def period_return_chart(weight):
     """Chart of performance per month and performance per year
     Might be a little buggy with some bad data need improvement
     Args:
-        weight ([type]): [description]
+        weight ([int]): weight of each asset in portfolio
 
     Returns:
         [type]: [description]
     """
     fig = make_subplots(rows=2, cols=1, vertical_spacing=0.05)
 
-    df_annual = resample_portfolio_change(weight, "Y")
+    df_annual = resample_portfolio_period(weight, "Y")
     df_annual.index = [str(date)[:4] for date in df_annual.index.to_list()]
 
-    try:
-        ann_return = df_annual["Portfolio"].tolist()[1:]
-        annualized_ret = 1
-        for val in ann_return:
-            annualized_ret *= 1 + val
-        annualized_ret = (annualized_ret ** (1 / len(ann_return))) - 1
-        print("ANNUALIZED RETURN : " + str(annualized_ret))
-    except Exception:
-        print("Erreur : calcul rendement annualisé ")
+    average_period_performance(df_annual, "annual")
 
     df_negative_year = df_annual[df_annual["Portfolio"] < 0]
     df_positive_year = df_annual[df_annual["Portfolio"] > 0]
 
+    # Trace green bar for positive year return
     fig.add_trace(
         go.Bar(
             x=df_positive_year.index,
@@ -396,6 +403,7 @@ def period_return_chart(weight):
         row=2,
         col=1,
     )
+    # Trace red bar for negative year return
     fig.add_trace(
         go.Bar(
             x=df_negative_year.index,
@@ -409,12 +417,14 @@ def period_return_chart(weight):
         col=1,
     )
 
-    df_monthly = resample_portfolio_change(weight, "M")
+    df_monthly = resample_portfolio_period(weight, "M")
     df_monthly.index = [str(date)[:7] for date in df_monthly.index.to_list()]
+    average_period_performance(df_monthly, "month")
 
     df_negative_month = df_monthly[df_monthly["Portfolio"] < 0]
     df_positive_month = df_monthly[df_monthly["Portfolio"] > 0]
 
+    # Trace green bar for positive month return
     fig.add_trace(
         go.Bar(
             x=df_positive_month.index,
@@ -427,6 +437,7 @@ def period_return_chart(weight):
         row=1,
         col=1,
     )
+    # Trace red bar for negative month return
     fig.add_trace(
         go.Bar(
             x=df_negative_month.index,
@@ -443,54 +454,19 @@ def period_return_chart(weight):
     fig.layout.yaxis1.tickformat = ",.0%"
     fig.layout.yaxis2.tickformat = ",.0%"
 
-    return fig
+    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+
+    fig.write_html(
+        "../result_html/period_return_fig.html", auto_open=False, full_html=False
+    )
 
 
-def create_final_review(
-    evol_price_fig, sharpe_fig, sharpe_by_asset_fig, period_return_fig
-):
+def create_final_html_file():
     """Assembles all graphs together in a single HTMl file named DASHBOARD.html
     and open a page in browser
-    Args:
-        evol_price_fig ([type]): [description]
-        sharpe_fig ([type]): [description]
-        sharpe_by_asset_fig ([type]): [description]
-        period_return_fig ([type]): [description]
     """
     fichier_html_graphs = open("../result_html/DASHBOARD.html", "w+")
     fichier_html_graphs.write("<html><head></head><body>" + "\n")
-
-    evol_price_fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0),
-        # paper_bgcolor="LightSteelBlue",
-    )
-    sharpe_fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0),
-        # paper_bgcolor="LightSteelBlue",
-    )
-    sharpe_by_asset_fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0),
-        # paper_bgcolor="LightSteelBlue",
-    )
-    period_return_fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0),
-        # paper_bgcolor="LightSteelBlue",
-    )
-
-    plot(
-        evol_price_fig, filename="../result_html/evol_asset_price.html", auto_open=False
-    )
-    plot(sharpe_fig, filename="../result_html/sharpe_fig.html", auto_open=False)
-    plot(
-        period_return_fig,
-        filename="../result_html/period_return_fig.html",
-        auto_open=False,
-    )
-    plot(
-        sharpe_by_asset_fig,
-        filename="../result_html/sharpe_by_asset_fig.html",
-        auto_open=False,
-    )
 
     fichier_html_graphs.write(
         ' <div style= "position: relative;  top: 0px;  left: 0;  width: 68%;  height: 59%;">'
@@ -532,27 +508,23 @@ def create_final_review(
     webbrowser.open_new_tab("../result_html/DASHBOARD.html")
 
 
-def get_data_and_create_graph(assets, startdate, num_portfolio, args):
+def get_data_and_create_graph(assets, startdate, num_portfolio):
     """Main function which will retrieve assets data and create graphs
     based on it
     Args:
         assets (list): Assets to analyze
         startdate (string): Date where the analyze should begin
         num_portfolio (int): number of different portfolio allocation to create
-        args : optionnal command arguments
     """
     get_asset_data(assets, startdate)
 
-    sharpe_fig, max_sharpe_port = optimize(num_portfolio)
-    sharpe_by_asset_fig, ticker_to_eliminate = sharpe_each_asset_chart()
-    evol_price_fig = evol_chart(max_sharpe_port.tolist()[3:], log=args.log)
+    max_sharpe_portfolio = optimize_sharpe_ratio(num_portfolio)
+    ticker_to_eliminate = sharpe_each_asset_chart()
+    evol_chart(max_sharpe_portfolio.tolist()[3:])
+    period_return_chart(max_sharpe_portfolio.tolist()[3:])
 
-    period_return_fig = period_return_chart(max_sharpe_port.tolist()[3:])
-
-    create_final_review(
-        evol_price_fig, sharpe_fig, sharpe_by_asset_fig, period_return_fig
-    )
-    return ticker_to_eliminate
+    create_final_html_file()
+    return max_sharpe_portfolio, ticker_to_eliminate
 
 
 def main(args):
@@ -568,34 +540,32 @@ def main(args):
     # assets with percentage less than this value will be deleted in optimized portfolio
     value_filter = 100 / len(assets) * (35 / 10000)
 
-    ticker_to_eliminate = get_data_and_create_graph(
-        assets, startdate, num_portfolio, args
+    max_sharpe_portfolio, ticker_to_eliminate = get_data_and_create_graph(
+        assets, startdate, num_portfolio
     )
 
-    if args.filter:
-        for i in range(args.filter):
-            max_sharpe_port = max_sharpe_port[max_sharpe_port.values > value_filter]
-            print(max_sharpe_port)
-            print("############################")
-            print("FILTRATION...")
-            print("############################")
+    for i in range(args.filter):
+        max_sharpe_portfolio = max_sharpe_portfolio[
+            max_sharpe_portfolio.values > value_filter
+        ]
+        print(max_sharpe_portfolio)
+        print("############################")
+        print("FILTRATION...")
+        print("############################")
 
-            new_assets = max_sharpe_port.index.tolist()[3:]
-            new_assets = [x for x in new_assets if x not in ticker_to_eliminate]
-            if previous_assets == new_assets: # if no filtration is made this is the "final" result
-                break
-            previous_assets = new_assets
+        new_assets = max_sharpe_portfolio.index.tolist()[3:]
+        new_assets = [x for x in new_assets if x not in ticker_to_eliminate]
+        if assets == new_assets:  # if no filtration is made this is the "final" result
+            break
+        assets = new_assets
 
-            ticker_to_eliminate = get_data_and_create_graph(
-                assets, startdate, num_portfolio, args
-            )
+        max_sharpe_portfolio, ticker_to_eliminate = get_data_and_create_graph(
+            assets, startdate, num_portfolio
+        )
 
 
 if __name__ == "__main__":
     os.chdir(os.path.dirname(sys.argv[0]))
     parser = argparse.ArgumentParser()
-    parser.add_argument("-f", dest="filter", type=int, help="filtered mode")
-    parser.add_argument(
-        "--log", dest="log", action="store_true", help="Use logarithmic chart"
-    )
+    parser.add_argument("-f", dest="filter", type=int, help="filtered mode", default=0)
     main(parser.parse_args())
