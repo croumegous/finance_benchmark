@@ -13,7 +13,7 @@ Based on [sharpe ratio ](https://en.wikipedia.org/wiki/Sharpe_ratio) to optimize
 You can configure the ticker you want to benchmark in `config.py` file.
 This benchmark take data from yahoo finance you can use all available [ticker](https://en.wikipedia.org/wiki/Ticker_symbol) of yahoo :  stocks, ETF, crypto ...
 
-The source code will generate a large number of portfolio with different proportions for each given ticker.  
+The source code will generate a large number of portfolio with different proportions for each given asset.  
 Then it will calculate sharpe ratio of each one of this portfolio to try to find the best performing one with volatily as low as possible.  
 Then it will return the best proportion to be used in the portfolio for each ticker.
 

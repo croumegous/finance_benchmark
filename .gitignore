@@ -1,2 +1,6 @@
 draft.md
-new_assets.csv
+finance_benchmark/assets.csv
+finance_benchmark/cache.sqlite
+finance_benchmark/__pycache__/*
+finance_benchmark/result_html/*
+.vscode/
