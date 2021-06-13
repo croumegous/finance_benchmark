@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 import argparse
 import os
 import sys
@@ -56,10 +57,13 @@ def get_asset_data(assets_ticker, startdate):
     df.drop_duplicates(inplace=True)
 
     df.to_csv("../assets.csv")
+    
+    return df
 
 
 # For later improvement it may be better to use sortino ratio instead of sharpe ratio
 # https://www.investopedia.com/ask/answers/010815/what-difference-between-sharpe-ratio-and-sortino-ratio.asp
+# Edit: after a try I still prefer sharpe ratio for the moment
 def optimize_sharpe_ratio(num_portfolios):
     """Optimize portfolio with sharpe ratio
 
@@ -77,6 +81,7 @@ def optimize_sharpe_ratio(num_portfolios):
     if "Portfolio" in data.columns:
         data.drop("Portfolio", 1, inplace=True)
 
+    # Get number of assets in portfolio
     asset_size = len(data.columns)
     # convert daily asset prices into daily returns
     returns = data.pct_change()
@@ -158,7 +163,7 @@ def optimize_sharpe_ratio(num_portfolios):
     fig.write_html("../result_html/sharpe_fig.html", auto_open=False, full_html=False)
 
     print("####### Optimized portfolio #######")
-    print(max_sharpe_portfolio)
+    print(max_sharpe_portfolio[2:])
     print("###################################")
 
     return max_sharpe_portfolio
@@ -175,16 +180,20 @@ def sharpe_each_asset_chart():
 
     # convert daily asset prices into daily returns
     returns = data.pct_change()
-    sharpe_ratio = (returns.mean() / returns.std()) * (252 ** 0.5)
-
+    
     mean_return = returns.mean() * 252
     volatility = returns.std() * (252 ** 0.5)
+    #volatility = returns[returns<0].std() * np.sqrt(252)
 
-    print("Sharpe ratio for each asset: ")
+    sharpe_ratio = mean_return / volatility
+        
     ticker_to_eliminate = [
         key for key, value in sharpe_ratio.to_dict().items() if value <= 0.2
-    ]
+    ] # remove assets with ratio less than 0.2
+    
+    print("Sharpe ratio for each asset: ")
     print(dict(zip(sharpe_ratio.index.to_list(), sharpe_ratio.to_list())))
+    
     fig = go.Figure(
         data=(
             go.Scattergl(
@@ -220,8 +229,8 @@ def sharpe_each_asset_chart():
     fig.update_layout(
         xaxis_title="Volatility",
         yaxis_title="Returns",
-        yaxis=dict(range=[0, 1]),
-        xaxis=dict(range=[0, 1]),
+        yaxis=dict(range=[0, 2]),
+        xaxis=dict(range=[0, 2]),
     )
 
     fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
@@ -232,7 +241,7 @@ def sharpe_each_asset_chart():
     return ticker_to_eliminate
 
 
-def evol_chart(weight):
+def performance_chart(weight):
     """Performance chart of each asset
     also include optimized portfolio performance
 
@@ -484,7 +493,7 @@ def get_data_and_create_graph(assets, startdate, num_portfolio):
 
     max_sharpe_portfolio = optimize_sharpe_ratio(num_portfolio)
     ticker_to_eliminate = sharpe_each_asset_chart()
-    evol_chart(max_sharpe_portfolio.tolist()[3:])
+    performance_chart(max_sharpe_portfolio.tolist()[3:])
     period_return_chart(max_sharpe_portfolio.tolist()[3:])
 
     create_final_html_file()
