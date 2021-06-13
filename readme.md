@@ -28,11 +28,10 @@ This mean that the best portfolio for the period of time given would be to have 
 
 ## Graphs
 
-It will create different graph at the end of the process, the first graph will shown performance of each asset, the second one the sharpe ratio of all the portfolio generated.  
-The 3 one performance per month and per year for the "optimized" portfolio, and the last one the sharpe ratio of each asset.
+It will create different graphs at the end of the process, the first graph will shown performance of each asset, the second one the sharpe ratio of all the portfolio generated.  
+The 3rd one performance per month and per year for the "optimized" portfolio, and the last one the sharpe ratio of each asset.
 
-
-(put image of a result with number legend (1), (2) etc....)
+![](./assets/result_example.png)
 
 # Usage
 install [python](https://www.python.org/downloads/) 3.8 or above and [poetry](https://python-poetry.org/docs/) (pakage manager) on your computer.
@@ -57,9 +56,3 @@ You can configure the ticker you want to use inside `config.py` file, by using a
 You can also change the target time period with `startdate`, and the number of portfolios (`num_portfolio` which will be randomly generated.  
 Ultimately you can change `polite_name` variable to rename ticker wich will be shown on the (1) graph.
   
-   
-  
- ### Technologies 
-  
-Visualization is made in HTML with Plotly.
-I used pandas and numpy to handle data analysis.
